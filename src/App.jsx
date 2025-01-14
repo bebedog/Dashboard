@@ -11,7 +11,7 @@ import {AppProvider} from './Context/AppProvider';
 
 function App() {
   const [isLocal] = useState(true)
-  console.log("tawa", isLocal)
+  console.log("tawa", false)
   return (
     
     <AppProvider isLocal={isLocal}>
