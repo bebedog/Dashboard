@@ -45,7 +45,7 @@ function Home() {
         if(isLocal){
           return 'http://localhost:8000/fetchPromoCode'
         }
-        return '/fetchPromoCode'
+        return 'api/fetchPromoCode'
       })(),
       withCredentials: true
     })
