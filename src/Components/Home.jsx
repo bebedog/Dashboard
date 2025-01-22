@@ -171,17 +171,20 @@ function Home() {
         title: 'Promo Code ID',
         dataIndex: 'promoCodeID',
         width: 300,
-        render: (text,record,index) => <a onClick={()=>handleClick(index)}>{text}</a>
+        render: (text,record,index) => <a onClick={()=>handleClick(index)}>{text}</a>,
+        align: "center"
     },
     {
       title: 'Promo Code',
       dataIndex: 'code',
       key: 'code',
+      align: "center"
       
     },
     {
       title: 'Discount',
-      render: (text, record) => record.percent_off + "%"
+      render: (text, record) => record.percent_off + "%",
+      align: "center"
     },
     // {
     //   title: 'Redemptions',
@@ -189,14 +192,22 @@ function Home() {
     // },
     {
       title: 'Status',
-      render: (text, record, {tags}) => (record.status === "true" ? <Tag color="green">Active</Tag> : <Tag color="red">Inactive</Tag>) 
+      render: (text, record, {tags}) => (record.status === "true" ? <Tag color="green">Active</Tag> : <Tag color="red">Inactive</Tag>),
+      align: "center"
     },
     {
       title: 'Date Created',
       render: (text, record, {tags}) => {
         const newDate = new Date(record.date * 1000)
         return newDate.toLocaleDateString()
-      }
+      },
+      align: "center"
+    },
+      {
+      title: 'Redemptions',
+      key: 'redemptions',
+      render: (text, record) => record.times_redeemed,
+      align: "center"
     },
     {
       ...getColumnSearchProps('code', 'Promo Code'),
@@ -286,6 +297,9 @@ function Home() {
                   <Button type="primary" style={{backgroundColor:"green"}} onClick={()=>exportCSV(promoObj)}>Export to CSV</Button>
                 </Row>
                 }
+                pagination = {{
+                  pageSize: 12
+                }}
               />
         
             </Spin>

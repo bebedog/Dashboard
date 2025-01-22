@@ -10,7 +10,7 @@ import {AppProvider} from './Context/AppProvider';
 
 
 function App() {
-  const [isLocal] = useState(true)
+  const [isLocal] = useState(false)
   console.log("tawa", false)
   return (
     
