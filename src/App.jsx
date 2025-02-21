@@ -7,6 +7,7 @@ import { Content, Header } from 'antd/es/layout/layout';
 import { Routes, Route, NavLink } from 'react-router-dom';
 import Accounts from './Components/Accounts';
 import {AppProvider} from './Context/AppProvider';
+import Main from './Components/Main';
 
 
 function App() {
@@ -24,10 +25,14 @@ function App() {
                 items={[
                   {
                   key: "1",
-                  label: (<NavLink to={"/"}>Promo Codes</NavLink>)
+                  label: (<NavLink to={"/main"}>Home</NavLink>)
                   },
                   {
                   key: "2",
+                  label: (<NavLink to={"/"}>Promo Codes</NavLink>)
+                  },
+                  {
+                  key: "3",
                   label: (<NavLink to={"/accounts"}>Accounts</NavLink>)
                   },
                 ]}
@@ -46,6 +51,10 @@ function App() {
             </Route>
             
             <Route path='/accounts' element={<Accounts />}>
+
+            </Route>
+
+            <Route path='/main' element={<Main />}>
 
             </Route>
 
