@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useRef, useContext } from "react";
-import { Row, Table, Modal, Spin, Input, Space, Button, Tag, Pagination, Form, InputNumber, Popconfirm, Badge } from "antd";
-import { PlusOutlined, PlusCircleOutlined } from "@ant-design/icons";
-import { SearchOutlined, SettingOutlined} from "@ant-design/icons"
+import React, { useEffect, useState, useRef, useContext, useTransition } from "react";
+import { Row, Table, Modal, Spin, Input, Space, Button, Tag, Pagination, Form, InputNumber, Popconfirm, Tabs, Flex, Collapse, Badge, Tooltip } from "antd";
+import { PlusOutlined, PlusCircleOutlined, DeleteOutlined, MoneyCollectOutlined } from "@ant-design/icons";
+import { SearchOutlined, SettingOutlined } from "@ant-design/icons"
 import axios from "axios";
 import Details from "./Details";
 import Highlighter from 'react-highlight-words'
@@ -10,11 +10,14 @@ import Papa from 'papaparse';
 import exportCSV from "./exportCSV"
 import { EnvironmentContext } from "../Context/AppProvider";
 import { useForm } from "antd/es/form/Form";
+import { concatTransformationMatrix } from "pdf-lib";
+import LaserProfile from "./LaserProfile";
+import AddAccount from "./AddAccount";
 const _ = require(`lodash`)
 
 
 
-const Accounts = () =>{
+const Accounts = () => {
     const { isLocal } = useContext(EnvironmentContext);
     const [allUsers, setAllUsers] = useState(null)
     const [isFetching, setIsFetching] = useState(false)
@@ -23,14 +26,18 @@ const Accounts = () =>{
     const [openModal, setOpenModal] = useState(false)
     const [userObj, setUserObj] = useState([])
     const [openConfirm, setOpenConfirm] = useState(false)
-    const [ loading, setLoading] = useState(false)
-    const [ loading2, setLoading2] = useState(false)
-    const [ loading3, setLoading3] = useState(false)
+    const [loading, setLoading] = useState(false)
+    const [loading2, setLoading2] = useState(false)
+    const [loading3, setLoading3] = useState(false)
     const [form] = Form.useForm()
     const [desc, setDesc] = useState(0)
     let con = useContext(EnvironmentContext)
     const [dex, setDex] = useState()
-    
+    const [allLaserProfile, setAllLaserProfile] = useState(null)
+    const [filteredProfile, setFilteredProfile] = useState([])
+    const [openAddAccountModal, setOpenAddAccountModal] = useState(false)
+    const [ transactions, setTransactions ] = useState([])
+
 
     useEffect(() => {
         fetchData()
@@ -40,7 +47,7 @@ const Accounts = () =>{
         setIsFetching(true); // Set fetching state to true initially
         try {
             // Perform both requests concurrently
-            const [usersResponse, calcsResponse, refreshTokenResponse] = await Promise.all([
+            const [usersResponse, calcsResponse, refreshTokenResponse, laserProfileResponse, transactionsResponse] = await Promise.all([
                 axios({
                     method: 'get',
                     url: isLocal ? 'http://localhost:8000/fetchAllUsers' : 'api/fetchAllUsers',
@@ -56,6 +63,16 @@ const Accounts = () =>{
                     url: isLocal ? 'http://localhost:8000/fetchRefreshToken' : 'api/fetchRefreshToken',
                     withCredentials: true,
                 }),
+                axios({
+                    method: 'get',
+                    url: isLocal ? 'http://localhost:8000/fetchAllLaserProfile' : 'api/fetchAllLaserProfile',
+                    withCredentials: true,
+                }),
+                axios({
+                    method: 'get',
+                    url: isLocal ? 'http://localhost:8000/fetchTransactions' : 'api/fetchTransactions',
+                    withCredentials: true,
+                }),
             ]);
 
             // Handle responses
@@ -67,33 +84,39 @@ const Accounts = () =>{
 
             console.log("Refresh", refreshTokenResponse.data)
             setRefreshToken(refreshTokenResponse.data)
+
+            console.log("laser profile", laserProfileResponse.data)
+            setAllLaserProfile(laserProfileResponse.data)
+
+            console.log("Transactions", transactionsResponse.data)
+            setTransactions(transactionsResponse.data)
         } catch (error) {
             console.error("Error fetching data1:", error);
         } finally {
-            setIsFetching(false); 
+            setIsFetching(false);
         }
     };
 
-    const revokeAll = (accountID) =>{
+    const revokeAll = (accountID) => {
         setLoading3(true)
         axios({
             method: "put",
             url: isLocal ? 'http://localhost:8000/revokeAll' : 'api/revokeAll',
-            data: {accountID: accountID},
+            data: { accountID: accountID },
             withCredentials: true
         })
-        .then((response)=>{
-            fetchData()
-            .then(()=>{
-                setLoading3(false)
+            .then((response) => {
+                fetchData()
+                    .then(() => {
+                        setLoading3(false)
+                    })
             })
-        })
-        .catch((err)=>{
-            console.error(err)
-        })
+            .catch((err) => {
+                console.error(err)
+            })
     }
 
-    const revokeSpecific = (refreshID) =>{
+    const revokeSpecific = (refreshID) => {
         console.log(refreshID)
         setLoading3(true)
         axios({
@@ -102,76 +125,132 @@ const Accounts = () =>{
             data: { refreshID: refreshID },
             withCredentials: true
         })
-        .then((response)=>{
-            console.log(response)
-            fetchData()
-            .then(()=>{
-                setLoading3(false)
+            .then((response) => {
+                console.log(response)
+                fetchData()
+                    .then(() => {
+                        setLoading3(false)
+                    })
             })
-        })
-        .catch((err)=>{
-            console.error(err)
-        })
-       
-
+            .catch((err) => {
+                console.error(err)
+            })
     }
 
-      console.log("calcs2", calcs)
- 
-      const dataSource = allUsers?.map((user, index) => {
-          const userCalcs = calcs?.find(calc => Number(calc.owner) === user.accountID) || {}; 
-          const filterUserRefreshToken = refreshToken?.filter(refresh => Number(refresh.owner) === user.accountID) || {}; 
-            const userRefreshToken = filterUserRefreshToken?.map((token, index)=>{
-                return token
+    const deleteRefreshToken = (refreshID) => {
+        console.log(refreshID)
+        // setLoading3(true)
+        axios({
+            method: "put",
+            // url: isLocal ? 'http://localhost:8000/revokeSpecific' : 'api/revokeSpecific',
+            data: { refreshID: refreshID },
+            withCredentials: true
+        })
+            .then((response) => {
+                console.log(response)
+                fetchData()
+                    .then(() => {
+                        // setLoading3(false)
+                    })
             })
+            .catch((err) => {
+                console.error(err)
+            })
+    }
+
+    console.log("calcs2", calcs)
+    console.log("profile2", allLaserProfile)
+    const dataSource = allUsers?.map((user, index) => {
+        const userCalcs = calcs?.find(calc => Number(calc.owner) === user.accountID) || {};
+        const filterUserRefreshToken = refreshToken?.filter(refresh => Number(refresh.owner) === user.accountID) || {};
+        const userRefreshToken = filterUserRefreshToken?.map((token, index) => { return token })
+        const filterUserLaserProfile = allLaserProfile?.filter(laserProfile => Number(laserProfile.owner) === user.accountID) || {}
+        const userLaserProfile = filterUserLaserProfile?.map((profile) => { return profile })
+        const userTransactions = transactions?.find(transactions => Number(transactions.owner) === user.accountID) || null
+        // setFilteredProfile(allLaserProfile?.filter(laserProfile => Number(laserProfile.owner) === user.accountID) || {})
         return {
             id: index,
             allUser: user,
-            calcs: userCalcs, 
-            refreshToken: userRefreshToken
+            calcs: userCalcs,
+            refreshToken: userRefreshToken,
+            laserProfile: userLaserProfile,
+            userTransactions: userTransactions
         };
     });
-    
 
     console.log("tok", dataSource)
 
     const columns = [
 
         {
+            title: '',
+            align: "left",
+            width: 20,
+            render: (text, record) => record.userTransactions ?  
+            <Tooltip title="Money Collected">
+                <Badge
+                    count={
+                        <MoneyCollectOutlined 
+                            style={{
+                            color: 'blue',
+                            fontSize: '30px' 
+                            }}
+                        />
+                    }
+            
+                /> 
+            </Tooltip>
+            : ""
+
+        },
+
+        {
             title: 'Name',
             // dataIndex: 'username',
             width: 200,
-            render: (text,record, index, pagination) => <a onClick={()=>handleOpen(record.id)}>{record.allUser.firstName} {record.allUser.lastName}</a>
+            align: "center",
+            render: (text, record, index, pagination) => <a onClick={() => handleOpen(record.id)}>{record.allUser.firstName} {record.allUser.lastName}</a>
         },
         {
             title: 'Username',
             dataIndex: 'username',
             width: 200,
-            render: (text,record,index) => record.allUser.username
+            align: "center",
+            render: (text, record, index) => record.allUser.username
         },
         {
             title: 'Email',
             dataIndex: 'emailAddress',
             width: 200,
-            render: (text,record,index) =>  record.allUser.emailAddress
+            align: "center",
+            render: (text, record, index) => record.allUser.emailAddress
         },
         {
-          title: 'Number of Calculations ',
-          render: (text, record) => record.calcs.issubscribed ? <Tag color="#F7B306">Subscribed</Tag> : record.calcs.numberofcalculations ? record.calcs.numberofcalculations : <Tag>No Calculation Data</Tag>
+            title: 'Number of Calculations ',
+            align: "center",
+            render: (text, record) => record.calcs.issubscribed ? <Tag color="#F7B306">Subscribed</Tag> : record.calcs.numberofcalculations ? record.calcs.numberofcalculations : <Tag>No Calculation Data</Tag>
+        },
+        {
+            title: 'Last Login',
+            align: "center",
+            render: (text, record) => record.allUser.date_last_logged_in ? record.allUser.date_last_logged_in : "-"
         },
         {
             title: "Activation Code",
+            align: "center",
             render: (text, record) => record.allUser?.confirmationCode
 
         },
         {
             title: 'Status',
-            render: (text, record) => record.allUser.active ?  <Tag color="green">Active</Tag> : <Tag color="red">Not Activated</Tag>
+            align: "center",
+            render: (text, record) => record.allUser.active ? <Tag color="green">Active</Tag> : <Tag color="red">Not Activated</Tag>
         },
+       
         // {
         //   title: 'Pre Authorized',
         //   render: (text, record) => record.calcs.isPreAuthorized ?  <Tag color="green">Active</Tag> : <Tag color="red">Inactive</Tag>
-        // },
+        // },s
         // {
         //   title: 'Action',
         //   render: (text, record, {tags}) => (
@@ -179,11 +258,11 @@ const Accounts = () =>{
         //     <Button type="primary" danger >Revoke Login</Button>
         //     {/* <Button>Revoke Login</Button> */}
         //   </Row>)
-          
+
         // },
         {
-        //   ...getColumnSearchProps('code', 'Promo Code'),
-          width: 5
+            //   ...getColumnSearchProps('code', 'Promo Code'),
+            width: 5
         }
         // {
         //   title: 'Discount',
@@ -196,111 +275,110 @@ const Accounts = () =>{
         //   dataIndex: 'status',
         //   key: 'status'
         // }
-      ];
+    ];
 
     const colums2 = []
 
-    const handleOpen=(index, pageSize)=>{
+    const handleOpen = (index, pageSize) => {
         setOpenModal(true)
         setUserObj(dataSource[index])
         form.resetFields()
         setDex(index)
     }
 
-    const handleManuallyActivate = (accountID)=>{
+    const handleManuallyActivate = (accountID) => {
         setLoading(true)
         axios({
             method: 'post',
             url: isLocal ? 'http://localhost:8000/manuallyActivateAccount' : 'api/manuallyActivateAccount',
-            data: {accountID: accountID},
+            data: { accountID: accountID },
             withCredentials: true
         })
-        .then((res)=>{
-            console.log(res)
-            setLoading(false)
-            setOpenConfirm(false)
-            
+            .then((res) => {
+                console.log(res)
+                setLoading(false)
+                setOpenConfirm(false)
 
-        })
-        .catch((err)=>{console.log(err)})
-        .finally(()=>{
-            setOpenModal(false)
-            fetchData()
 
-        })
+            })
+            .catch((err) => { console.log(err) })
+            .finally(() => {
+                setOpenModal(false)
+                fetchData()
+
+            })
     }
 
-    const handleSubmit = (accountID) =>{
+    const handleSubmit = (accountID) => {
         setLoading2(true)
         console.log(form.getFieldValue(), accountID)
         const addCalculation = form.getFieldValue()
         axios({
             method: 'post',
             url: isLocal ? 'http://localhost:8000/manuallyAddCalculations' : 'api/manuallyAddCalculations',
-            data: {accountID: accountID, ...addCalculation },
+            data: { accountID: accountID, ...addCalculation },
             withCredentials: true
         })
-        .then(()=>{ 
-            fetchData()
-            setOpenModal(false)
-        })
-        .catch((err)=>{
-            console.error(err)
-        })
+            .then(() => {
+                fetchData()
+                setOpenModal(false)
+            })
+            .catch((err) => {
+                console.error(err)
+            })
 
     }
 
-
-    return(
+    return (
         <>
-        {/* <Row justify="center"><h1>RealTime LSS Accounts </h1></Row> */}
-        <Row justify="center" align="top">
-          <Spin spinning={isFetching}>
-            {dataSource ? (
-                <>
-              <Table
-              scroll={{
-                  x: 800,
-              }}
-              size="large"
-              style={{ width: "90vw" }}
-              columns={columns}
-              dataSource={dataSource}
-              rowKey="id" 
-              title={()=><Row justify={'space-between'} align={"middle"}><h3>Manage Accounts</h3> <div><Button type="primary">Manually Add Account</Button></div></Row>}
-              footer= {()=>
-              <Row justify={'end'}>  
-                  {/* <Button type="primary" style={{backgroundColor:"green"}} onClick={()=>exportCSV(promoObj)}>Export to CSV</Button> */}
-              </Row>
-              }
-              />
+            {/* <Row justify="center"><h1>RealTime LSS Accounts </h1></Row> */}
+            <Row justify="center" align="top">
+                <Spin spinning={isFetching}>
+                    {dataSource ? (
+                        <>
+                            <Table
+                                scroll={{
+                                    x: 800,
+                                }}
+                                size="large"
+                                style={{ width: "90vw" }}
+                                columns={columns}
+                                dataSource={dataSource}
+                                rowKey="id"
+                                title={() => <Row justify={'space-between'} align={"middle"}><h3>Manage Accounts</h3> <div><Button type="primary" onClick={()=>setOpenAddAccountModal(true)}>Manually Add Account</Button></div></Row>}
+                                footer={() =>
+                                    <Row justify={'end'}>
+                                        {/* <Button type="primary" style={{backgroundColor:"green"}} onClick={()=>exportCSV(promoObj)}>Export to CSV</Button> */}
+                                    </Row>
+                                }
+                            />
 
-            <Modal 
-                closable={false}
-                open={openModal} 
-                onCancel={()=>setOpenModal(false)}
-                footer={null}
-                title={
-                <Row justify={'space-between'}>
-                    {`${userObj?.allUser?.firstName || ""} ${userObj?.allUser?.lastName || ""}`} 
-                    {!userObj?.allUser?.active  && <Tag color="red" style={{marginLeft:"8px"}}>Not Activated</Tag>} 
-                </Row> 
-                }
-                width={1300}
-                >
-                <Spin spinning={loading3}>
-                    <div style={{minHeight:"150px"}}>
-                        <Row>
-                            Date Added: {userObj?.allUser?.dateAdded}
-                        </Row>
-                        {!userObj?.calcs?.issubscribed ? (
-                            
-                            <>
-                                <Row>
-                                    Number of Calculations: {userObj?.calcs?.numberofcalculations}
-                                </Row>
-                                <Row>
-                                    {userObj?.calcs?.numberofcalculations ? (
+                            <Modal
+                                closable={false}
+                                open={openModal}
+                                onCancel={() => setOpenModal(false)}
+                                footer={null}
+                                title={
+                                    <Row justify={'space-between'}>
+                                        {`${userObj?.allUser?.firstName || ""} ${userObj?.allUser?.lastName || ""}`}
+                                        {!userObj?.allUser?.active && <Tag color="red" style={{ marginLeft: "8px" }}>Not Activated</Tag>}
+                                    </Row>
+                                }
+                                width={1300}
+                            >
+                                <Spin spinning={loading3}>
+                                    <div style={{ minHeight: "150px" }}>
+                                        <Row>
+                                            Date Added: {userObj?.allUser?.dateAdded}
+                                        </Row>
+                                        {!userObj?.calcs?.issubscribed ? (
+
+                                            <>
+                                                <Row>
+                                                    Number of Calculations: {userObj?.calcs?.numberofcalculations}
+                                                </Row>
+                                                <Row>
+                                                    {userObj?.calcs?.numberofcalculations ? (
                                                         <Form name="addCalculation" form={form} onFinish={() => handleSubmit(userObj?.allUser?.accountID)} style={{ width: "100%" }}>
                                                             <Form.Item label="Add Calculations">
                                                                 <Form.Item name="addCalculations" noStyle>
@@ -320,79 +398,105 @@ const Accounts = () =>{
 
                                                             </Form.Item>
                                                         </Form>
-                                    ) : "No Calculation data"}
-                                </Row>
-                            </>
-                        ): <Tag color="#F7B306">Subscribed</Tag>
-                        }
-                        <Row> 
-                            <Table 
-                                columns={[
-                                    {
-                                        title: "ID", 
-                                        width: 150,
-                                        render: (record)=> record.id
-                                    },
-                                    {
-                                        title: "Refresh Token", 
-                                        width: 1000,
-                                        render: (record)=> record.refreshToken
-                                    },
-                                    {
-                                        title: "Status", 
-                                        width: 100,
-                                        render: (record)=> record.revoked ? "Revoked" : "Active"
-                                    },
-                                    {
-                                        title:  <Popconfirm
-                                                    onConfirm={() => revokeAll(userObj.allUser.accountID)}
-                                                    loading={loading3}
-                                                    title="Revoke All Refresh Tokens"
-                                                    description={`Are you sure you want to revoke all of ${userObj?.allUser?.firstName}'s refresh token?`}
-                                                >
-                                                    <Button type="primary" danger>Revoke All</Button>
-                                                </Popconfirm>,
-                                        align: "center",
-                                        width: 150,
-                                        render: (record)=> 
-                                            !record.revoked && 
-                                            <Popconfirm
-                                                    onConfirm={() => revokeSpecific(record.id)}
-                                                    loading={loading3}
-                                                    title="Revoke Refresh Token"
-                                                    description={`Are you sure you want to revoke this refresh token?`}
-                                                >
-                                                <Button type="primary" danger>Revoke</Button>
-                                            </Popconfirm>
-                                    },
-                                ]} 
-                                dataSource={dataSource[dex]?.refreshToken}/> 
-                        </Row>
-                        
-                    </div>
-                    {!userObj?.allUser?.active ? <Button type="primary" block style={{marginBottom:"8px"}} onClick={()=>setOpenConfirm(true)}>Manually Activate Account</Button> : "" }
-                    <Button block onClick={()=>setOpenModal(false)}>Cancel</Button>
-                </Spin>
-            </Modal>
-            <Modal 
-                title={"Confirmation"}
-                closable={false}
-                open={openConfirm} 
-                footer={
-                <Row justify={'end'}>
-                    <Space>
-                        <Button onClick={()=>setOpenConfirm(false)}> Cancel </Button>
-                        <Button onClick={()=>handleManuallyActivate(userObj.allUser.accountID)} type="primary" loading={loading}> Activate </Button>
-                    </Space>
-                </Row>}>
-                    Are you sure you want to Activate this account?
-            </Modal>
-        </>) : (null)}
+                                                    ) : "No Calculation data"}
+                                                </Row>
+                                            </>
+                                        ) : <Tag color="#F7B306">Subscribed</Tag>
+                                        }
+                                        <Tabs
+                                            defaultValue={1}
+                                            items={[
+                                                {
+                                                    key: 1,
+                                                    label: "Refresh Tokens",
+                                                    children:
+                                                        <>
+                                                            <Row>
+                                                                <Table
+                                                                    columns={[
+                                                                        {
+                                                                            title: "ID",
+                                                                            width: 150,
+                                                                            render: (record) => record.id
+                                                                        },
+                                                                        {
+                                                                            title: "Refresh Token",
+                                                                            width: 1000,
+                                                                            render: (record) => record.refreshToken
+                                                                        },
+                                                                        {
+                                                                            title: "Status",
+                                                                            width: 100,
+                                                                            render: (record) => record.revoked ? "Revoked" : "Active"
+                                                                        },
+                                                                        {
+                                                                            title: <Popconfirm
+                                                                                onConfirm={() => revokeAll(userObj.allUser.accountID)}
+                                                                                loading={loading3}
+                                                                                title="Revoke All Refresh Tokens"
+                                                                                description={`Are you sure you want to revoke all of ${userObj?.allUser?.firstName}'s refresh token?`}
+                                                                            >
+                                                                                <Button type="primary" danger>Revoke All</Button>
+                                                                            </Popconfirm>,
+                                                                            align: "center",
+                                                                            width: 150,
+                                                                            render: (record) =>
+                                                                                !record.revoked ?
+                                                                                <Popconfirm
+                                                                                    onConfirm={() => revokeSpecific(record.id)}
+                                                                                    loading={loading3}
+                                                                                    title="Revoke Refresh Token"
+                                                                                    description={`Are you sure you want to revoke this refresh token?`}
+                                                                                >
+                                                                                    <Button type="primary" danger>Revoke</Button>
+                                                                                </Popconfirm>
+                                                                                :  <Popconfirm
+                                                                                    onConfirm={() => deleteRefreshToken(record.refreshToken)}
+                                                                                    loading={loading3}
+                                                                                    title="Delete Expired Refresh Token"
+                                                                                    description={`Are you sure you want to delete this refresh token?`}
+                                                                                >
+                                                                                    <Button type="primary" danger icon={<DeleteOutlined />} shape="circle"></Button>
+                                                                                </Popconfirm>
+                                                                        },
+                                                                    ]}
+                                                                    dataSource={dataSource[dex]?.refreshToken} />
+                                                            </Row>
+                                                        </>
+                                                },
+                                                {
+                                                    key: 2,
+                                                    label: "Saved Lasers",
+                                                    children:   
+                                                        <Row style={{width: "70%", justifySelf:"center"}}>
+                                                            <LaserProfile laserProfile={dataSource[dex]?.laserProfile}/>
+                                                        </Row>
+                                                }
+                                            ]} />
+                                    </div>
+                                    {!userObj?.allUser?.active ? <Button type="primary" block style={{ marginBottom: "8px" }} onClick={() => setOpenConfirm(true)}>Manually Activate Account</Button> : ""}
+                                    <Button block onClick={() => setOpenModal(false)}>Cancel</Button>
+                                </Spin>
+                            </Modal>
+                            <Modal
+                                title={"Confirmation"}
+                                closable={false}
+                                open={openConfirm}
+                                footer={
+                                    <Row justify={'end'}>
+                                        <Space>
+                                            <Button onClick={() => setOpenConfirm(false)}> Cancel </Button>
+                                            <Button onClick={() => handleManuallyActivate(userObj.allUser.accountID)} type="primary" loading={loading}> Activate </Button>
+                                        </Space>
+                                    </Row>}>
+                                Are you sure you want to Activate this account?
+                            </Modal>
+                        </>) : (null)}
 
-          </Spin>
-        </Row>
-       
-      
+                </Spin>
+            </Row>
+
+            <AddAccount openAddAccountModal={openAddAccountModal} setOpenAddAccountModal={setOpenAddAccountModal} fetchData={fetchData}/>
 
         </>
     )
